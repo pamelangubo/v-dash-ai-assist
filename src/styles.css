@@ -201,3 +201,170 @@
     transform: none;
   }
 }
+
+/* ---------- Animated V-dash logo ---------- */
+.vdash-logo-scene {
+  animation: vdash-scene-out 0.45s ease 2.05s both;
+}
+.vdash-logo-final {
+  opacity: 0;
+  animation: vdash-logo-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) 2s both;
+}
+.vdash-runner {
+  animation:
+    vdash-run-in 1.35s cubic-bezier(0.4, 0, 0.5, 1) both,
+    vdash-runner-bob 0.28s ease-in-out 0s 5,
+    vdash-runner-absorb 0.4s ease-in 1.35s both;
+  transform-box: fill-box;
+  transform-origin: 50% 60%;
+}
+.vdash-leg-front {
+  transform-box: fill-box;
+  transform-origin: 25% 0%;
+  animation: vdash-leg-a 0.28s ease-in-out 0s 5;
+}
+.vdash-leg-back {
+  transform-box: fill-box;
+  transform-origin: 75% 0%;
+  animation: vdash-leg-b 0.28s ease-in-out 0s 5;
+}
+.vdash-arm-back {
+  transform-box: fill-box;
+  transform-origin: 100% 100%;
+  animation: vdash-leg-b 0.28s ease-in-out 0s 5;
+}
+.vdash-paper {
+  opacity: 0;
+}
+.vdash-paper-1 {
+  animation: vdash-paper-fall 0.9s ease-in 0.35s both;
+}
+.vdash-paper-2 {
+  animation: vdash-paper-fall 0.9s ease-in 0.6s both;
+}
+.vdash-paper-3 {
+  animation: vdash-paper-fall 0.9s ease-in 0.85s both;
+}
+.vdash-paper-drop {
+  opacity: 0;
+  animation: vdash-fade-in 0.3s ease 1.15s both;
+}
+.vdash-v {
+  stroke-dasharray: 130;
+  stroke-dashoffset: 130;
+  opacity: 0;
+  animation:
+    vdash-v-draw 0.6s cubic-bezier(0.22, 1, 0.36, 1) 1.25s both,
+    vdash-v-morph 0.5s ease-in 1.75s both;
+}
+
+@keyframes vdash-run-in {
+  from {
+    transform: translateX(-95px);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes vdash-runner-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -3px;
+  }
+}
+@keyframes vdash-runner-absorb {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.55;
+  }
+}
+@keyframes vdash-leg-a {
+  0%,
+  100% {
+    rotate: 18deg;
+  }
+  50% {
+    rotate: -22deg;
+  }
+}
+@keyframes vdash-leg-b {
+  0%,
+  100% {
+    rotate: -22deg;
+  }
+  50% {
+    rotate: 20deg;
+  }
+}
+@keyframes vdash-paper-fall {
+  0% {
+    opacity: 0;
+    transform: translate(64px, 34px) rotate(0deg);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translate(18px, 74px) rotate(-140deg);
+  }
+}
+@keyframes vdash-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes vdash-v-draw {
+  from {
+    opacity: 1;
+    stroke-dashoffset: 130;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes vdash-v-morph {
+  from {
+    opacity: 1;
+    stroke-dashoffset: 0;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    stroke-dashoffset: 0;
+    scale: 1.15;
+  }
+}
+@keyframes vdash-scene-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes vdash-logo-in {
+  from {
+    opacity: 0;
+    scale: 0.7;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vdash-logo-scene {
+    display: none;
+  }
+  .vdash-logo-final {
+    opacity: 1;
+    animation: none;
+  }
+}
