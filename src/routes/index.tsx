@@ -274,7 +274,7 @@ function ChatPage() {
             />
             <PromptInputFooter className="justify-end">
               <PromptInputSubmit
-                status={pending ? "submitted" : undefined}
+                {...(pending ? { status: "submitted" as const } : {})}
                 disabled={!input.trim() || pending}
               />
             </PromptInputFooter>
