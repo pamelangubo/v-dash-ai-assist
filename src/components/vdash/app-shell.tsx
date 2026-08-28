@@ -11,7 +11,7 @@ import {
   Settings,
   ShieldAlert,
 } from "lucide-react";
-import logo from "@/assets/vdash-logo.png";
+import { AnimatedLogo } from "@/components/vdash/animated-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { DISCLAIMER } from "@/lib/vdash/mock-ai";
@@ -30,13 +30,7 @@ export const NAV = [
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <img
-        src={logo}
-        alt="V-dash logo"
-        width={40}
-        height={40}
-        className="h-9 w-9 shrink-0 drop-shadow-sm"
-      />
+      <AnimatedLogo size={36} />
       {!compact && (
         <div className="leading-tight">
           <div className="font-display text-lg font-extrabold tracking-tight">V-dash</div>
