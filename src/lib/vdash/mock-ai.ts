@@ -76,70 +76,319 @@ export function planSummary(tasks: Task[], mode: "daily" | "weekly") {
     .join("\n");
 }
 
-export function generateResearch(topic: string, style: "standard" | "simple" | "expanded" = "standard") {
-  const subject = topic.trim().split(/\s+/).slice(0, 14).join(" ") || "your topic";
+/* ------------------------------------------------------------------ *
+ * Research generation — content aware.
+ * The output is derived from the actual text the user provides:
+ * keywords, statistics, quoted evidence sentences and a detected
+ * subject domain all feed the summary, insights, findings and advice.
+ * ------------------------------------------------------------------ */
+
+const STOPWORDS = new Set(
+  `a an and or the of to in on for with without by from at as is are was were be been being this that these those it its into over under about after before between during than then there their they we you your our us i he she his her them our not no do does did done can could should would will shall may might must have has had having more most other some such only own same so too very just now new using use used what which who whom when where why how all any both each few many much per via if but because while also across within among against toward towards upon out up down off again further once here does`.split(
+    /\s+/,
+  ),
+);
+
+const DOMAINS: {
+  key: string;
+  label: string;
+  words: string[];
+  lens: string;
+  metrics: string[];
+  actions: string[];
+  risks: string[];
+}[] = [
+  {
+    key: "ai",
+    label: "AI & automation",
+    words: ["ai", "artificial", "intelligence", "machine", "learning", "llm", "model", "automation", "chatbot", "copilot", "genai", "algorithm", "prompt", "data"],
+    lens: "capability maturity versus governance readiness",
+    metrics: ["hours returned per user per week", "output accepted without rework (%)", "error/hallucination rate at review", "cost per completed task"],
+    actions: [
+      "Pick two repetitive, high-volume workflows and instrument them before introducing any model.",
+      "Define an acceptance bar (what a good output looks like) and sample 20 outputs weekly against it.",
+      "Keep a named human reviewer for anything customer-, legal-, finance- or HR-facing.",
+      "Log prompts and outputs so quality regressions are traceable rather than anecdotal.",
+    ],
+    risks: [
+      "Confident-but-wrong output is the dominant failure mode; volume hides it until a customer finds it.",
+      "Tool sprawl fragments data and makes cost and quality impossible to attribute.",
+    ],
+  },
+  {
+    key: "people",
+    label: "people & workplace",
+    words: ["hybrid", "remote", "employee", "hr", "hiring", "recruit", "retention", "culture", "wellbeing", "burnout", "engagement", "onboarding", "team", "staff", "talent", "workplace", "manager"],
+    lens: "behaviour change and manager capability, not policy text",
+    metrics: ["voluntary attrition by tenure band", "manager 1:1 coverage", "time-to-productivity for new starters", "engagement pulse by team, not company average"],
+    actions: [
+      "Publish the operating norms (core hours, response expectations, meeting rules) in writing — ambiguity is the real cost.",
+      "Train managers first; team-level variance almost always exceeds policy-level variance.",
+      "Run a short pulse per team each month instead of one long annual survey.",
+      "Tie any change to one visible commitment leadership actually keeps.",
+    ],
+    risks: [
+      "Company-wide averages mask a handful of struggling teams driving most of the attrition.",
+      "Policy without manager enablement produces compliance, not adoption.",
+    ],
+  },
+  {
+    key: "finance",
+    label: "finance & commercial",
+    words: ["cost", "revenue", "budget", "margin", "pricing", "price", "invoice", "cash", "profit", "roi", "spend", "forecast", "procurement", "supplier", "finance", "investment"],
+    lens: "unit economics and the reliability of the underlying numbers",
+    metrics: ["gross margin by segment", "cost-to-serve per account", "forecast accuracy vs actuals", "days from work done to cash collected"],
+    actions: [
+      "Rebuild the number from source before acting on it — most disputes are definition disputes.",
+      "Model a downside case at 70% of the expected benefit and check the decision still holds.",
+      "Separate one-off savings from recurring savings in every business case.",
+      "Set a review date where the investment is either scaled or stopped.",
+    ],
+    risks: [
+      "Benefit cases built on vendor figures typically overstate outcomes by 30–40%.",
+      "Savings that never appear in a budget line are savings that did not happen.",
+    ],
+  },
+  {
+    key: "marketing",
+    label: "marketing & growth",
+    words: ["marketing", "brand", "campaign", "customer", "audience", "seo", "content", "social", "conversion", "funnel", "leads", "growth", "retention", "churn", "market"],
+    lens: "channel efficiency and message clarity rather than volume",
+    metrics: ["cost per qualified lead by channel", "landing-to-signup conversion", "90-day retention of new customers", "share of pipeline from repeatable sources"],
+    actions: [
+      "Cut the two lowest-performing channels and reinvest in the one with the clearest attribution.",
+      "Test the message, not the format — most flat results are positioning problems.",
+      "Instrument the full path to revenue before optimising the top of it.",
+      "Write for the buyer's actual objection; generic value language converts poorly.",
+    ],
+    risks: [
+      "Attribution gaps make good channels look bad and vice versa.",
+      "Short test windows produce noise that reads like a result.",
+    ],
+  },
+  {
+    key: "ops",
+    label: "operations & process",
+    words: ["process", "workflow", "operations", "supply", "logistics", "efficiency", "productivity", "quality", "lean", "manufacturing", "delivery", "backlog", "throughput", "service"],
+    lens: "where work waits, not where people work",
+    metrics: ["cycle time end to end", "queue/wait time between steps", "rework rate", "first-time-right percentage"],
+    actions: [
+      "Map the flow and measure waiting time between steps — that is usually where most of the loss sits.",
+      "Remove one handoff before adding any new tooling.",
+      "Standardise the top three most-repeated tasks in writing.",
+      "Run the change on one line/team for four weeks with a single tracked metric.",
+    ],
+    risks: [
+      "Local optimisation of one step often increases the total cycle time.",
+      "Unmeasured rework silently absorbs the gains from faster processing.",
+    ],
+  },
+  {
+    key: "compliance",
+    label: "risk, legal & compliance",
+    words: ["compliance", "legal", "regulation", "policy", "gdpr", "popia", "privacy", "security", "audit", "risk", "governance", "contract", "consent", "breach"],
+    lens: "defensibility — can the decision be evidenced later",
+    metrics: ["open findings by severity and age", "% of processing with a documented lawful basis", "time to detect and report an incident", "third-party review coverage"],
+    actions: [
+      "Write down the decision, the basis for it and who approved it — evidence beats intent.",
+      "Classify data before choosing tooling; the classification drives every later control.",
+      "Set retention and deletion rules now, not after the first request arrives.",
+      "Rehearse the incident path once; untested processes fail under pressure.",
+    ],
+    risks: [
+      "Shadow tooling moves sensitive data outside the controls you documented.",
+      "Guidance changes faster than internal policy review cycles.",
+    ],
+  },
+  {
+    key: "education",
+    label: "learning & education",
+    words: ["learning", "education", "training", "student", "course", "curriculum", "skills", "teaching", "school", "university", "assessment"],
+    lens: "transfer of learning into actual work behaviour",
+    metrics: ["completion vs applied-on-the-job rate", "assessment gain pre/post", "manager-observed behaviour change at 60 days", "drop-off point in the curriculum"],
+    actions: [
+      "Design the assessment before the content; it defines what is actually learned.",
+      "Space practice over weeks — single sessions decay within a month.",
+      "Give managers a two-question follow-up to run at 30 and 60 days.",
+      "Cut content that no assessment or task depends on.",
+    ],
+    risks: [
+      "Completion rates are a participation metric, not a learning outcome.",
+      "Without applied practice, most gains disappear inside a quarter.",
+    ],
+  },
+];
+
+const GENERIC_DOMAIN = {
+  key: "general",
+  label: "general business",
+  words: [] as string[],
+  lens: "evidence quality and the cost of being wrong",
+  metrics: ["baseline before the change", "one primary outcome metric", "time and effort actually spent", "unintended side effects"],
+  actions: [
+    "Write the question down precisely — most research fails on a vague question.",
+    "Capture a baseline before changing anything.",
+    "Test the smallest version that could show a real signal.",
+    "Set a date to review, keep or stop.",
+  ],
+  risks: [
+    "Confirmation bias: sources agreeing with the plan get weighted too heavily.",
+    "Small samples over short windows produce results that do not repeat.",
+  ],
+};
+
+function tokenize(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+}
+
+function keywords(text: string, n: number) {
+  const counts = new Map<string, number>();
+  for (const w of tokenize(text)) counts.set(w, (counts.get(w) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .slice(0, n)
+    .map(([w]) => w);
+}
+
+function sentences(text: string) {
+  return text
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map((s) => s.trim())
+    .filter((s) => s.split(" ").length > 5);
+}
+
+function stats(text: string) {
+  const found = text.match(/(?:[£$€R]\s?\d[\d,.]*\s?(?:k|m|bn|billion|million)?|\d[\d,.]*\s?(?:%|percent)|\b(?:19|20)\d{2}\b|\b\d[\d,.]*\s?(?:hours?|days?|weeks?|months?|users?|people|employees|customers)\b)/gi);
+  return [...new Set((found ?? []).map((s) => s.trim()))].slice(0, 6);
+}
+
+function detectDomain(text: string) {
+  const toks = tokenize(text);
+  let best = GENERIC_DOMAIN as (typeof DOMAINS)[number];
+  let bestScore = 0;
+  for (const d of DOMAINS) {
+    const score = toks.filter((t) => d.words.some((w) => t === w || t.startsWith(w))).length;
+    if (score > bestScore) {
+      best = d;
+      bestScore = score;
+    }
+  }
+  return { domain: bestScore >= 2 ? best : (GENERIC_DOMAIN as (typeof DOMAINS)[number]), score: bestScore };
+}
+
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function generateResearch(
+  topic: string,
+  style: "standard" | "simple" | "expanded" = "standard",
+) {
+  const text = topic.trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  const isDocument = words.length >= 45;
+  const subject = words.slice(0, 14).join(" ") || "your topic";
   const short = subject.length > 90 ? subject.slice(0, 90) + "…" : subject;
 
+  const { domain } = detectDomain(text);
+  const kws = keywords(text, 8);
+  const k = (i: number, fallback: string) => kws[i] ?? fallback;
+  const figures = stats(text);
+  const sents = sentences(text);
+  const evidence = sents
+    .map((s) => ({ s, score: tokenize(s).filter((t) => kws.includes(t)).length / Math.max(6, s.split(" ").length) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((e) => (e.s.length > 220 ? e.s.slice(0, 217) + "…" : e.s));
+
+  const focus = kws.slice(0, 3).map((w) => `**${w}**`).join(", ") || `**${short}**`;
+  const sourceLine = isDocument
+    ? `Analysed ${words.length} words (${sents.length} sentences) of supplied text.`
+    : `Analysed the topic as supplied (${words.length} word${words.length === 1 ? "" : "s"}); no source document was pasted, so this brief is framed as a scoping analysis rather than a source review.`;
+
+  /* ---------------- simple ---------------- */
   if (style === "simple") {
-    return `## Simple explanation — ${short}
+    return `## Plain-language explanation — ${short}
 
-In plain language: this is about making the work clearer, faster and less error-prone for the people doing it every day.
+*${sourceLine} Subject area detected: ${domain.label}.*
 
-**The short version**
-- There is a problem that costs time or money right now.
-- A few practical changes fix most of it.
-- The change works best when a small group tries it first.
+**What this is really about**
+${isDocument
+  ? `The text keeps returning to ${focus}. Stripped of jargon, it is arguing that how ${k(0, "the work")} is handled today creates cost, and that changing the approach to ${k(1, "it")} would reduce that cost.`
+  : `You've asked about ${focus}. In plain terms, the question is whether changing how ${k(0, "this")} is handled is worth the effort it takes.`}
 
-**Why it matters**
-Teams that adopt this typically save a few hours a week per person, and mistakes drop because the process is written down instead of remembered.
-
+**The three things that matter**
+1. ${titleCase(k(0, "the main issue"))} is the centre of it — everything else follows from how you handle it.
+2. ${titleCase(k(1, "the second factor"))} decides whether the change sticks or fades after a few weeks.
+3. ${titleCase(k(2, "measurement"))} is how you know it worked; without it you are guessing.
+${figures.length ? `\n**Numbers mentioned:** ${figures.join(", ")} — check where each came from before repeating them.\n` : ""}
 **What to do next**
-1. Pick one team to try it for four weeks.
-2. Measure time saved and errors avoided.
-3. Roll out only what actually worked.`;
+1. Write down the one thing you want to be different, in a sentence.
+2. Measure ${domain.metrics[0]} as it is today.
+3. Try the change with one small group for four weeks.
+4. Keep it only if the number moved.
+
+**The honest caveat**
+${domain.risks[0]}`;
   }
 
+  /* ---------------- standard / expanded ---------------- */
   const expansion =
     style === "expanded"
       ? `
 
-## Deeper analysis
-Adoption tends to follow an S-curve: slow for the first month while habits form, then a sharp rise once one team demonstrates a visible win. The main failure mode is tooling without process — organisations that only buy software see roughly half the benefit of those that also redesign the workflow.
+## Deeper analysis — ${domain.label}
+Viewed through ${domain.lens}, ${focus} is less a single decision than a sequence. The first weeks are absorbed by definition work: agreeing what ${k(0, "the subject")} means in your context and what counts as a good outcome. Only after that does ${k(1, "the change itself")} start producing measurable movement.
 
-**Risks and counter-arguments**
-- Over-automation can hide errors until they become expensive.
-- Benefits reported by vendors are usually best-case; discount by 30–40%.
-- Change fatigue is real; sequence initiatives rather than stacking them.
+**Where this typically goes wrong**
+${domain.risks.map((r) => `- ${r}`).join("\n")}
+- ${titleCase(k(2, "the supporting factor"))} is usually under-resourced relative to ${k(0, "the headline change")}, and becomes the constraint by month two.
 
-**Comparable cases**
-- Mid-size professional services firm: 18% reduction in admin hours after 2 quarters.
-- Public sector team: gains delayed by 6 months due to procurement, then matched private-sector results.`
+**Second-order effects to watch**
+- Changing ${k(0, "this")} shifts workload rather than removing it unless a handoff is deleted.
+- Teams closest to ${k(1, "the work")} will spot problems weeks before the reporting does — give them a route to say so.
+
+**How to strengthen this brief**
+${isDocument
+  ? `- The supplied text is one perspective. Add a source that disagrees with it and re-test the conclusion.\n- Verify ${figures.length ? `the figures quoted (${figures.slice(0, 3).join(", ")})` : "any quantitative claims"} against a primary source.`
+  : `- Paste the actual report, article or dataset and this brief will quote and test its specific claims instead of scoping the question.\n- Add your own baseline numbers for ${domain.metrics[0]}.`}`
       : "";
 
   return `## Summary — ${short}
 
-Current evidence suggests this area is maturing quickly: the fundamentals are well understood, adoption is uneven, and the biggest gains come from process design rather than tooling alone. Organisations that pair a clear workflow with focused training consistently outperform those that adopt tools in isolation.
+*${sourceLine} Subject area detected: **${domain.label}**; assessed through ${domain.lens}.*
+
+${isDocument
+  ? `The material centres on ${focus}. The argument it makes is that ${k(0, "the subject")} is currently handled inconsistently, and that a deliberate approach to ${k(1, "it")} produces most of the available benefit. The reasoning is coherent, but the evidence supplied is stronger on direction than on magnitude.`
+  : `Your question concerns ${focus}. Within ${domain.label}, the decisive variable is rarely the tool or the policy — it is whether ${k(0, "the subject")} is defined precisely enough to be measured. This brief scopes the question, the evidence you would need, and what to do first.`}
 
 ## Key insights
-1. **Process before tooling.** Documented workflows account for the majority of measured improvement.
-2. **Small pilots win.** Teams of 5–12 people produce faster, cleaner signal than org-wide rollouts.
-3. **Measurement is the gap.** Most teams cannot say what a change is worth because no baseline was captured.
-4. **Quality control matters.** Human review at decision points prevents the small errors that erode trust.
+1. **${titleCase(k(0, "Core subject"))} is the dependent variable.** Movement in ${k(1, "the surrounding factors")} only shows up once ${k(0, "it")} is defined and tracked consistently.
+2. **${titleCase(k(1, "The second factor"))} determines durability.** It is the difference between a four-week improvement and a permanent one.
+3. **${titleCase(k(2, "Evidence quality"))} is the weak point.** ${figures.length ? `Figures are present (${figures.slice(0, 3).join(", ")}) but their derivation is not stated.` : "No quantitative anchor is present, so claims cannot currently be sized."}
+4. **Scope discipline beats ambition.** In ${domain.label}, narrow changes with one owner outperform broad programmes with shared accountability.
 
 ## Important findings
-- Time saved concentrates in repetitive, low-judgement work — not in strategic work.
-- Benefits plateau after ~3 months unless the workflow is revisited.
-- Documentation quality is the single strongest predictor of a successful rollout.
+${evidence.length
+  ? evidence.map((e) => `- From the text: "${e}"\n  → Treat as a claim to verify, not a finding; check the basis before relying on it.`).join("\n")
+  : `- The question as stated is unscoped: "${short}" could mean several different investigations with different costs.\n- No baseline exists yet for ${domain.metrics[0]}, so any later claim of improvement will be contestable.\n- The most likely hidden cost sits in ${k(1, "the surrounding process")}, not in ${k(0, "the headline item")}.`}
+${figures.length ? `- Figures extracted: ${figures.join(", ")}. Re-derive each from source; quoted numbers change meaning when the denominator changes.` : ""}
 
 ## Recommendations
-- Capture a baseline (hours, error rate, cycle time) before changing anything.
-- Run a four-week pilot with one willing team and one clear metric.
-- Write the process down; treat the tool as replaceable.
-- Add a lightweight review step for anything customer-, legal- or finance-facing.
-- Review outcomes monthly and retire whatever is not earning its time.${expansion}
+${domain.actions.map((a, i) => `${i + 1}. ${a}`).join("\n")}
+5. Track exactly these: ${domain.metrics.join("; ")}.
+
+## Risks and counter-arguments
+${domain.risks.map((r) => `- ${r}`).join("\n")}
+- A reasonable opposing view: ${k(0, "this subject")} may be a symptom, and the real constraint could sit upstream in ${k(3, "adjacent processes")}.
 
 ## In plain language
-This works when you fix the way work flows first, try it small, measure honestly, and keep a human checking anything important.`;
+${isDocument
+  ? `The text says ${k(0, "this")} matters and should be handled differently. That is probably right in direction. Before acting, pin down what ${k(1, "success")} means, measure it today, change one thing, and check the number in four weeks.`
+  : `Define what you actually mean by ${k(0, "this")}, measure where you are now, change one thing for a small group, and keep it only if ${domain.metrics[0]} improves.`}${expansion}`;
 }
 
 const CHAT_FALLBACKS = [
